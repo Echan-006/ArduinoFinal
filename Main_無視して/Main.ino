@@ -18,6 +18,9 @@ bool firstCheck_1 = false;
 bool firstCheck_2 = false;
 bool onceFirst = true;
 
+bool gameStartCheck_1 = false;
+bool gameStartCheck_2 = false;
+
 uint8_t phase = 0;
 enum PHASE
 {
@@ -39,9 +42,8 @@ enum MAP_PHASE
   PLAYER2_MOVE
 };
 
-unsigned long diceWait = 0;
-const uint8_t DICE_WAIT_NONE = 0;
-const uint16_t DICE_TIME = 1000;
+bool diceFirst = true;
+bool didDice = false;
 uint8_t dice = 0;
 unsigned long diceEnd = 0;
 const uint8_t DICE_END_NONE = 0;
@@ -57,6 +59,179 @@ int diceMove = 0;
 int diceCount = 0;
 int diceNum_1 = 1;
 int diceNum_2 = 1;
+
+const uint8_t GAME_NUM = 1;
+
+bool gameResult = false;
+
+uint8_t phase_instantGame = 0;
+enum INSTANT_GAME
+{
+  IG_READY,
+  IG_WAIT,
+  IG_SHOW,
+  IG_RESULT,
+  IG_END
+};
+
+class InstantGame{
+
+private:
+  int direction;
+
+  unsigned long startTime;
+  unsigned long p1Time;
+  unsigned long p2Time;
+
+  bool p1Win;
+  bool p2Win;
+
+public:
+
+  InstantGame(){
+    p1Win = false;
+    p2Win = false;
+  }
+
+  void readyScreen(){
+  display.clearDisplay();
+
+  display.setCursor(0, 0);
+  display.println("Ready...");   // 前の画面を消す
+
+  display.display();  //メモリの内容をOLEDに送信
+
+  delay(1000);
+  phase_instantGame = IG_WAIT;
+  }
+
+  void waitRandom(){
+  int wait_time;
+  wait_time = random(2000, 5001); //2～5秒の間でランダムに
+  delay(wait_time);
+  phase_instantGame = IG_SHOW;
+  }
+
+  void showDirection(){
+    direction = random(4);
+
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setCursor(40, 20);
+
+    switch(direction){
+      case 0:
+        display.println("UP");
+        break;
+
+      case 1:
+        display.println("RIGHT");
+        break;
+      
+      case 2:
+        display.println("DOWN");
+        break;
+      
+      case 3:
+        display.println("LEFT");
+        break;
+    }
+
+  display.display();
+  startTime = millis();
+  checkDirection();
+  }
+
+  void checkDirection(){
+    p1Win = false;
+    p2Win = false;
+
+    while(millis() - startTime < 5000){
+      int p1 = getDirection(VRX_1, VRY_1);
+      int p2 = getDirection(VRX_2, VRY_2);
+
+      if(p1 == direction){
+        p1Time = millis() - startTime;
+        p1Win = true;
+        phase_instantGame = IG_RESULT;
+        diceNum_1 = 2;
+      }
+
+      if(p2 == direction){
+        p2Time = millis() - startTime;
+        p2Win = true;
+        phase_instantGame = IG_RESULT;
+        diceNum_2 = 2;
+      }
+    }
+    phase_instantGame = IG_RESULT;
+  } 
+
+  //0:上, 1:右, 2:下, 3:左, 4:例外
+  int getDirection(int x, int y)
+  {
+    int joyX = analogRead(x);
+    int joyY = analogRead(y);
+    int xBase = joyX - 500;
+    int yBase = joyY - 500;
+    if(abs(xBase) > abs(yBase))
+    {
+      if(xBase >= 100)
+      {
+        return 2;
+      }
+      else if(xBase <= -100)
+      {
+        return 0;
+      }
+    }
+    else
+    {
+      if(yBase >= 100)
+      {
+        return 1;
+      }
+      else if(yBase <= -100)
+      {
+        return 3;
+      }
+    }
+    return 4;
+  }
+  
+  void resultScreen(){
+    display.clearDisplay();
+    display.setCursor(20,20);
+
+    if(p1Win){
+      display.println("P1 WIN");
+
+      display.setCursor(20,40);
+      display.print(p1Time);
+      display.println(" ms");
+    }
+
+    else if(p2Win){
+      display.println("P2 WIN");
+
+      display.setCursor(20,40);
+      display.print(p2Time);
+      display.println(" ms");
+    }
+
+    else{
+      display.println("TIME UP");
+    }
+
+    display.display();
+    delay(2000);
+    phase_instantGame = IG_END;
+  }
+
+};
+
+InstantGame _InstantGame;
+
 
 void setup()
 {
@@ -82,6 +257,8 @@ void setup()
     // }
     Serial.begin(115200);
 }
+
+
 
 void loop()
 {
@@ -137,15 +314,19 @@ void loop()
 
     if(player1Pos >= clearPos)
     {
+      display.clearDisplay();
       DrawCenterText("Player1", (SCREEN_HEIGHT / 2) - 15, 1);
       DrawCenterText("WIN!!", (SCREEN_HEIGHT / 2) + 10, 2);
       display.display();
+      return;
     }
     if(player2Pos >= clearPos)
     {
+      display.clearDisplay();
       DrawCenterText("Player2", (SCREEN_HEIGHT / 2) - 15, 1);
       DrawCenterText("WIN!!", (SCREEN_HEIGHT / 2) + 10, 2);
       display.display();
+      return;
     }
 
     switch(phase)
@@ -155,12 +336,19 @@ void loop()
         {
           case PLAYER1_DICE:
             DrawCenterText("Player1", (SCREEN_HEIGHT / 2) - 20, 1);
-            if(diceWait == DICE_WAIT_NONE)
+
+            if(diceFirst)
             {
-              diceWait = millis() + DICE_TIME;
-              dice = random(1, 7);  //1から6までの乱数
+              dice = random(1, 7);
+              diceFirst = false;
             }
-            if(millis() < diceWait)
+
+            if((digitalRead(SW_1) == LOW))
+            {
+              didDice = true;
+            }
+
+            if(!didDice)
             {
               uint8_t displayDice = random(1, 7);  //演出用のやつ
 
@@ -179,11 +367,13 @@ void loop()
               {
                 diceMove += dice;
                 diceEnd = DICE_END_NONE;
-                diceWait = DICE_WAIT_NONE;
+                diceFirst = true;
+                didDice = false;
                 diceCount++;
                 if(diceCount >= diceNum_1)
                 {
                   mapPhase = PLAYER1_MOVE;
+                  diceNum_1 = 1;
                 }
               }
             }
@@ -220,12 +410,19 @@ void loop()
             return;
           case PLAYER2_DICE:
             DrawCenterText("Player2", (SCREEN_HEIGHT / 2) - 20, 1);
-            if(diceWait == DICE_WAIT_NONE)
+
+            if(diceFirst)
             {
-              diceWait = millis() + DICE_TIME;
-              dice = random(1, 7);  //1から6までの乱数
+              dice = random(1, 7);
+              diceFirst = false;
             }
-            if(millis() < diceWait)
+
+            if((digitalRead(SW_2) == LOW))
+            {
+              didDice = true;
+            }
+
+            if(!didDice)
             {
               uint8_t displayDice = random(1, 7);  //演出用のやつ
 
@@ -243,11 +440,13 @@ void loop()
               {
                 diceMove += dice;
                 diceEnd = DICE_END_NONE;
-                diceWait = DICE_WAIT_NONE;
+                diceFirst = true;
+                didDice = false;
                 diceCount++;
                 if(diceCount >= diceNum_2)
                 {
                   mapPhase = PLAYER2_MOVE;
+                  diceNum_2 = 1;
                 }
               }
             }
@@ -278,12 +477,60 @@ void loop()
                 diceCount = 0;
                 diceMove = 0;
                 moveWait = MOVE_WAIT_NONE;
+
+                phase = GAME;
+                gameStartCheck_1 = false;
+                gameStartCheck_2 = false;
+                phase_instantGame = IG_READY;
               }
             }
             display.display();
             return;
           }
       case GAME:
+        if(!gameStartCheck_1 && isPressed_1)
+        {
+          gameStartCheck_1 = true;
+        }
+        if(!gameStartCheck_2 && isPressed_2)
+        {
+          gameStartCheck_2 = true;
+        }
+        if(!gameStartCheck_1 || !gameStartCheck_2)
+        {
+          display.clearDisplay();
+          String message_1 = (gameStartCheck_1) ? "Player1: OK" : "Player1: Waiting";
+          String message_2 = (gameStartCheck_2) ? "Player2: OK" : "Player2: Waiting";
+
+          DrawCenterText("MiniGame", (SCREEN_HEIGHT / 2) - 10, 1);
+          DrawCenterText(message_1, (SCREEN_HEIGHT / 2), 1);
+          DrawCenterText(message_2, (SCREEN_HEIGHT / 2) + 10, 1);
+          display.display();
+          return;
+        }
+
+        switch(phase_instantGame)
+        {
+          case IG_READY:
+            _InstantGame.readyScreen();
+            break;
+          case IG_WAIT:
+            _InstantGame.waitRandom();
+            break;
+          case IG_SHOW:
+            _InstantGame.showDirection();
+            break;
+          case IG_RESULT:
+            _InstantGame.resultScreen();
+            break;
+          default:
+            break;
+        }
+        if(phase_instantGame == IG_END)
+        {
+          phase = MAP;
+          mapPhase = PLAYER1_DICE;
+        }
         display.display();
         return;
     }
