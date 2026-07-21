@@ -135,6 +135,19 @@ void loop()
       onceFirst = false;
     }
 
+    if(player1Pos >= clearPos)
+    {
+      DrawCenterText("Player1", (SCREEN_HEIGHT / 2) - 15, 1);
+      DrawCenterText("WIN!!", (SCREEN_HEIGHT / 2) + 10, 2);
+      display.display();
+    }
+    if(player2Pos >= clearPos)
+    {
+      DrawCenterText("Player2", (SCREEN_HEIGHT / 2) - 15, 1);
+      DrawCenterText("WIN!!", (SCREEN_HEIGHT / 2) + 10, 2);
+      display.display();
+    }
+
     switch(phase)
     {
       case MAP:
